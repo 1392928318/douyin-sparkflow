@@ -161,6 +161,17 @@ class SendStateTests(unittest.TestCase):
 
         self.assertEqual("C", selected)
 
+    def test_hitokoto_mode_falls_back_to_custom_variants_when_api_fails(self):
+        config = {
+            "messageMode": "hitokoto",
+            "messageTemplate": "固定备用消息",
+            "sendStrategy": {"messageVariants": ["备用消息一", "备用消息二"]},
+        }
+        with patch.object(msg_builder, "request_hitokoto", return_value="[error] 无法获取一言内容"):
+            candidates = msg_builder.build_message_candidates(config)
+
+        self.assertEqual(["备用消息一", "备用消息二"], candidates)
+
 
 if __name__ == "__main__":
     unittest.main()

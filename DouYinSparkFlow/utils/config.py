@@ -23,6 +23,7 @@ DEFAULT_CONFIG = {
     "multiTask": True,
     "taskCount": 1,
     "proxyAddress": "",
+    "messageMode": "hitokoto",
     "messageTemplate": "🤩今日火花+1\r\n",
     "saveDebugArtifacts": False,
     "useProtocolSender": False,

@@ -14,6 +14,12 @@ from utils.hitokoto import request_hitokoto
 
 FESTIVAL_WINDOW_START = date(2026, 2, 16)
 FESTIVAL_WINDOW_END = date(2026, 3, 3)
+MESSAGE_MODES = {"custom", "hitokoto", "spring_festival"}
+
+
+def _message_mode(active_config: dict) -> str:
+    mode = str(active_config.get("messageMode", "custom")).strip().lower()
+    return mode if mode in MESSAGE_MODES else "custom"
 
 
 def _is_holiday_mode_enabled(active_config: dict, today: date) -> bool:
@@ -52,6 +58,16 @@ def _render_regular_message(template: str) -> str:
 def build_message_candidates(config: Optional[dict] = None) -> List[str]:
     active_config = config or get_config()
     today = date.today()
+    mode = _message_mode(active_config)
+
+    if mode == "hitokoto":
+        message = request_hitokoto().strip()
+        if message and not message.startswith("[error]"):
+            return [message]
+
+    if mode == "spring_festival" and FESTIVAL_WINDOW_START <= today <= FESTIVAL_WINDOW_END:
+        message = _render_holiday_message(active_config, today)
+        return [message] if message else ["续火花"]
 
     if _is_holiday_mode_enabled(active_config, today):
         return [_render_holiday_message(active_config, today)]
