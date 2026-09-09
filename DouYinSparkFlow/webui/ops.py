@@ -174,9 +174,21 @@ def task_run_lock_status():
 def build_task_run_spec():
     if running_in_container():
         return [sys.executable, "main.py", "--doTask"], repo_root()
+    # A local Windows checkout still contains docker-compose.yml, but it is
+    # not a Docker deployment. Run the task with the same virtual environment
+    # as the web server instead of trying to invoke a missing Docker CLI.
+    if os.name == "nt":
+        return [sys.executable, "main.py", "--doTask"], repo_root()
     if compose_file_path():
         return compose_command("run", "--rm", "task"), compose_root()
     return [sys.executable, "main.py", "--doTask"], repo_root()
+
+
+def ops_log_path():
+    configured = str(get_app_settings().get("ops_log_file") or "/var/log/douyin-sparkflow.log")
+    if os.name == "nt" and configured.replace("\\", "/").startswith("/var/"):
+        return repo_root() / "logs" / "manual-task.log"
+    return Path(configured)
 
 
 def _env_shell_prefix(extra_env=None):
@@ -276,6 +288,18 @@ def run_background_command(args, log_path, cwd=None, env=None):
     if env:
         child_env.update(env)
 
+    popen_kwargs = {
+        "cwd": str(cwd_path),
+        "stdout": None,
+        "stderr": subprocess.STDOUT,
+        "env": child_env,
+    }
+    # On Windows, a manually triggered task must not share the web server's
+    # console control group. Otherwise a console interrupt can terminate both
+    # the task and the long-running web server.
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+
     with log_path.open("ab") as handle:
         started_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
         env_keys = ",".join(sorted((env or {}).keys())) or "none"
@@ -286,13 +310,8 @@ def run_background_command(args, log_path, cwd=None, env=None):
             ).encode("utf-8", errors="replace")
         )
         handle.flush()
-        process = subprocess.Popen(
-            args,
-            cwd=str(cwd_path),
-            stdout=handle,
-            stderr=subprocess.STDOUT,
-            env=child_env,
-        )
+        popen_kwargs["stdout"] = handle
+        process = subprocess.Popen(args, **popen_kwargs)
         handle.write(f"[WEB_TRIGGER] {started_at} pid={process.pid}\n".encode("utf-8", errors="replace"))
         handle.flush()
     return process.pid
@@ -364,7 +383,7 @@ def run_task_now(*, unsent_only=False, failed_only=False, force_all=False, accou
             )
             return TASK_ALREADY_RUNNING
 
-        log_file = Path(get_app_settings().get("ops_log_file") or "/var/log/douyin-sparkflow.log")
+        log_file = ops_log_path()
         command, cwd = build_task_run_spec()
         run_env = {
             "SPARKFLOW_MANUAL_RUN": "1",
@@ -428,7 +447,7 @@ def restart_proxy():
 
 
 def read_log_tail(lines=200):
-    log_path = Path(get_app_settings().get("ops_log_file") or "/var/log/douyin-sparkflow.log")
+    log_path = ops_log_path()
     if not log_path.exists():
         return ""
     content = log_path.read_text(encoding="utf-8", errors="replace").splitlines()

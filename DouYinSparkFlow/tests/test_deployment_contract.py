@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -7,6 +8,41 @@ SOURCE_ROOT = REPO_ROOT / "DouYinSparkFlow"
 
 
 class DeploymentContractTests(unittest.TestCase):
+    def test_windows_local_task_runner_does_not_select_compose(self):
+        from webui import ops
+
+        with (
+            patch.object(ops, "running_in_container", return_value=False),
+            patch.object(ops.os, "name", "nt"),
+            patch.object(ops, "compose_file_path", return_value=REPO_ROOT / "docker-compose.yml"),
+        ):
+            command, cwd = ops.build_task_run_spec()
+            log_path = ops.ops_log_path()
+
+        self.assertEqual([ops.sys.executable, "main.py", "--doTask"], command)
+        self.assertEqual(ops.repo_root(), cwd)
+        self.assertEqual(ops.repo_root() / "logs" / "manual-task.log", log_path)
+
+    def test_windows_background_task_uses_an_independent_process_group(self):
+        import tempfile
+
+        from webui import ops
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "task.log"
+            with (
+                patch.object(ops.os, "name", "nt"),
+                patch.object(ops.subprocess, "Popen") as popen,
+            ):
+                popen.return_value.pid = 12345
+                pid = ops.run_background_command(["python", "main.py", "--doTask"], log_path, cwd=SOURCE_ROOT)
+
+        self.assertEqual(12345, pid)
+        self.assertEqual(
+            ops.subprocess.CREATE_NEW_PROCESS_GROUP | ops.subprocess.CREATE_NO_WINDOW,
+            popen.call_args.kwargs["creationflags"],
+        )
+
     def test_github_workflow_is_at_repository_root(self):
         workflow = REPO_ROOT / ".github" / "workflows" / "schedule.yml"
         self.assertTrue(workflow.is_file())
