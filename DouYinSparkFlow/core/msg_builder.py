@@ -15,6 +15,7 @@ from utils.hitokoto import request_hitokoto
 FESTIVAL_WINDOW_START = date(2026, 2, 16)
 FESTIVAL_WINDOW_END = date(2026, 3, 3)
 MESSAGE_MODES = {"custom", "hitokoto", "spring_festival"}
+AUTOMATION_NOTICE = "小火花自动续上啦 Ciallo～(∠・ω< )⌒✨"
 
 
 def _message_mode(active_config: dict) -> str:
@@ -55,6 +56,13 @@ def _render_regular_message(template: str) -> str:
     return message.strip()
 
 
+def _with_automation_notice(message: str) -> str:
+    body = str(message or "").strip()
+    if not body or body.endswith(AUTOMATION_NOTICE):
+        return body
+    return f"{body}\n{AUTOMATION_NOTICE}"
+
+
 def build_message_candidates(config: Optional[dict] = None) -> List[str]:
     active_config = config or get_config()
     today = date.today()
@@ -63,24 +71,24 @@ def build_message_candidates(config: Optional[dict] = None) -> List[str]:
     if mode == "hitokoto":
         message = request_hitokoto().strip()
         if message and not message.startswith("[error]"):
-            return [message]
+            return [_with_automation_notice(message)]
 
     if mode == "spring_festival" and FESTIVAL_WINDOW_START <= today <= FESTIVAL_WINDOW_END:
         message = _render_holiday_message(active_config, today)
-        return [message] if message else ["续火花"]
+        return [_with_automation_notice(message or "续火花")]
 
     if _is_holiday_mode_enabled(active_config, today):
-        return [_render_holiday_message(active_config, today)]
+        return [_with_automation_notice(_render_holiday_message(active_config, today))]
 
     candidates: List[str] = []
     for template in _get_message_templates(active_config):
-        message = _render_regular_message(template)
+        message = _with_automation_notice(_render_regular_message(template))
         if message and message not in candidates:
             candidates.append(message)
 
     if candidates:
         return candidates
-    return ["续火花"]
+    return [_with_automation_notice("续火花")]
 
 
 def _extract_previous_message(previous_messages: Optional[dict], target: str) -> str:

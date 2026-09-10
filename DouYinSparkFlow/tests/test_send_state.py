@@ -3,6 +3,7 @@ import os
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
+from unittest.mock import Mock
 
 from core import msg_builder, tasks
 from core.send_state import history_entry_is_strong_confirmed_today
@@ -170,7 +171,41 @@ class SendStateTests(unittest.TestCase):
         with patch.object(msg_builder, "request_hitokoto", return_value="[error] 无法获取一言内容"):
             candidates = msg_builder.build_message_candidates(config)
 
-        self.assertEqual(["备用消息一", "备用消息二"], candidates)
+        self.assertEqual(
+            [
+                "备用消息一\n小火花自动续上啦 Ciallo～(∠・ω< )⌒✨",
+                "备用消息二\n小火花自动续上啦 Ciallo～(∠・ω< )⌒✨",
+            ],
+            candidates,
+        )
+
+    def test_all_message_modes_add_the_automation_notice(self):
+        custom = msg_builder.build_message_candidates(
+            {"messageMode": "custom", "sendStrategy": {"messageVariants": ["你好"]}}
+        )
+        with patch.object(msg_builder, "request_hitokoto", return_value="一言内容"):
+            hitokoto = msg_builder.build_message_candidates(
+                {"messageMode": "hitokoto", "sendStrategy": {"messageVariants": []}}
+            )
+
+        self.assertEqual(["你好\n小火花自动续上啦 Ciallo～(∠・ω< )⌒✨"], custom)
+        self.assertEqual(["一言内容\n小火花自动续上啦 Ciallo～(∠・ω< )⌒✨"], hitokoto)
+
+    def test_windows_task_lock_removal_retries_share_violation(self):
+        lock_path = Mock()
+        sharing_error = PermissionError("sharing violation")
+        sharing_error.winerror = 32
+        lock_path.unlink.side_effect = [sharing_error, None]
+
+        with (
+            patch.object(tasks, "_is_native_windows", return_value=True),
+            patch.object(tasks.time, "sleep") as sleep,
+        ):
+            removed = tasks._unlink_task_run_lock(lock_path, attempts=2, delay_seconds=0.01)
+
+        self.assertTrue(removed)
+        self.assertEqual(2, lock_path.unlink.call_count)
+        sleep.assert_called_once_with(0.01)
 
 
 if __name__ == "__main__":
