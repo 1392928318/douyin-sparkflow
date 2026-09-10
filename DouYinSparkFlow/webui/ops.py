@@ -302,7 +302,9 @@ def run_background_command(args, log_path, cwd=None, env=None):
     # console control group. Otherwise a console interrupt can terminate both
     # the task and the long-running web server.
     if is_native_windows():
-        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        process_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        popen_kwargs["creationflags"] = process_group | no_window
 
     with log_path.open("ab") as handle:
         started_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")

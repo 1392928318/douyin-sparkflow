@@ -32,6 +32,8 @@ class DeploymentContractTests(unittest.TestCase):
             log_path = Path(temp_dir) / "task.log"
             with (
                 patch.object(ops, "is_native_windows", return_value=True),
+                patch.object(ops.subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200, create=True),
+                patch.object(ops.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True),
                 patch.object(ops.subprocess, "Popen") as popen,
             ):
                 popen.return_value.pid = 12345
@@ -39,7 +41,7 @@ class DeploymentContractTests(unittest.TestCase):
 
         self.assertEqual(12345, pid)
         self.assertEqual(
-            ops.subprocess.CREATE_NEW_PROCESS_GROUP | ops.subprocess.CREATE_NO_WINDOW,
+            0x200 | 0x08000000,
             popen.call_args.kwargs["creationflags"],
         )
 
