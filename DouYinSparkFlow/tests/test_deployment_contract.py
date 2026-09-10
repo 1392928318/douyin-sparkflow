@@ -13,7 +13,7 @@ class DeploymentContractTests(unittest.TestCase):
 
         with (
             patch.object(ops, "running_in_container", return_value=False),
-            patch.object(ops.os, "name", "nt"),
+            patch.object(ops, "is_native_windows", return_value=True),
             patch.object(ops, "compose_file_path", return_value=REPO_ROOT / "docker-compose.yml"),
         ):
             command, cwd = ops.build_task_run_spec()
@@ -31,7 +31,7 @@ class DeploymentContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             log_path = Path(temp_dir) / "task.log"
             with (
-                patch.object(ops.os, "name", "nt"),
+                patch.object(ops, "is_native_windows", return_value=True),
                 patch.object(ops.subprocess, "Popen") as popen,
             ):
                 popen.return_value.pid = 12345

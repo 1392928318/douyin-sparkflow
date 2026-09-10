@@ -53,6 +53,10 @@ def running_in_container():
     return Path("/.dockerenv").exists()
 
 
+def is_native_windows():
+    return os.name == "nt"
+
+
 def compose_root():
     settings = get_app_settings()
     raw = settings.get("compose_root") or ""
@@ -177,7 +181,7 @@ def build_task_run_spec():
     # A local Windows checkout still contains docker-compose.yml, but it is
     # not a Docker deployment. Run the task with the same virtual environment
     # as the web server instead of trying to invoke a missing Docker CLI.
-    if os.name == "nt":
+    if is_native_windows():
         return [sys.executable, "main.py", "--doTask"], repo_root()
     if compose_file_path():
         return compose_command("run", "--rm", "task"), compose_root()
@@ -186,7 +190,7 @@ def build_task_run_spec():
 
 def ops_log_path():
     configured = str(get_app_settings().get("ops_log_file") or "/var/log/douyin-sparkflow.log")
-    if os.name == "nt" and configured.replace("\\", "/").startswith("/var/"):
+    if is_native_windows() and configured.replace("\\", "/").startswith("/var/"):
         return repo_root() / "logs" / "manual-task.log"
     return Path(configured)
 
@@ -297,7 +301,7 @@ def run_background_command(args, log_path, cwd=None, env=None):
     # On Windows, a manually triggered task must not share the web server's
     # console control group. Otherwise a console interrupt can terminate both
     # the task and the long-running web server.
-    if os.name == "nt":
+    if is_native_windows():
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
 
     with log_path.open("ab") as handle:
