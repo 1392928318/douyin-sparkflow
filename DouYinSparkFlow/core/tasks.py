@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import random
+import time
 import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -2783,6 +2784,29 @@ class TaskRunAlreadyInProgress(RuntimeError):
     """Raised when a live task process already owns the global run lock."""
 
 
+def _is_native_windows():
+    return os.name == "nt"
+
+
+def _unlink_task_run_lock(lock_path, *, attempts=10, delay_seconds=0.1):
+    """Remove a task lock, tolerating short-lived Windows reader handles."""
+    for attempt in range(attempts):
+        try:
+            lock_path.unlink()
+            return True
+        except FileNotFoundError:
+            return True
+        except PermissionError as exc:
+            is_windows_share_violation = _is_native_windows() and getattr(exc, "winerror", None) == 32
+            if not is_windows_share_violation:
+                raise
+            if attempt + 1 < attempts:
+                time.sleep(delay_seconds)
+                continue
+            logger.warning("Could not remove Windows task lock after %s attempts: %s", attempts, lock_path)
+            return False
+
+
 @contextmanager
 def task_run_lock():
     lock_path = Path("logs/task.run.lock")
@@ -2805,18 +2829,14 @@ def task_run_lock():
 
             if stale_pid is not None and not _lock_owner_is_alive(stale_pid):
                 logger.warning("Removing stale task lock owned by missing pid=%s", stale_pid)
-                try:
-                    lock_path.unlink()
-                except FileNotFoundError:
-                    pass
+                if not _unlink_task_run_lock(lock_path):
+                    raise TaskRunAlreadyInProgress("stale task lock is temporarily in use") from exc
                 continue
 
             if stale_pid is None:
                 logger.warning("Removing unreadable stale task lock with contents=%r", raw_pid)
-                try:
-                    lock_path.unlink()
-                except FileNotFoundError:
-                    pass
+                if not _unlink_task_run_lock(lock_path):
+                    raise TaskRunAlreadyInProgress("stale task lock is temporarily in use") from exc
                 continue
 
             raise TaskRunAlreadyInProgress("another task run is already in progress") from exc
@@ -2827,7 +2847,4 @@ def task_run_lock():
         yield
     finally:
         handle.close()
-        try:
-            lock_path.unlink()
-        except FileNotFoundError:
-            pass
+        _unlink_task_run_lock(lock_path)
